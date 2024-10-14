@@ -1,0 +1,86 @@
+name: CI/CD Pipeline
+
+on:
+  workflow_dispatch:  # 允许手动触发
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          pytest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up kind
+        run: |
+          curl -sSL https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64 -o /usr/local/bin/kind
+          sudo chmod +x /usr/local/bin/kind
+          kind create cluster
+
+      - name: Build Docker image
+        run: |
+          docker build  --progress=plain -t my-python-github-cicd-app .
+
+      - name: Load image into kind cluster
+        run: |
+          kind load docker-image my-python-github-cicd-app
+
+      - name: Deploy to Kubernetes (kind)
+        run: |
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+      
+      - name: Wait for Pod to be ready
+        run: |
+          kubectl wait --for=condition=ready pod -l app=my-python-github-cicd-app --timeout=60s
+
+      - name: Test service accessibility (kind)
+        run: |
+          kubectl port-forward service/my-python-github-cicd-app-service 30005:80 &  # 后台执行端口转发
+          sleep 5  # 短暂等待服务启动
+          for i in {1..5}; do  # 重试5次
+            curl -f http://localhost:30005 && break || echo "Service not reachable, retrying..." && sleep 5;
+          done
+
+      # - name: Test service accessibility (kind)
+      #   run: |
+      #     kubectl port-forward service/my-python-github-cicd-app-service 30005:80 &  # 后台运行端口转发
+      #     sleep 5  # 等待服务启动
+      #     curl -f http://localhost:30005 || echo "Service not reachable"
+
+      # - name: Deploy to Remote Kubernetes Cluster
+      #   env:
+      #     KUBECONFIG: ${{ secrets.KUBECONFIG }}
+      #   run: |
+      #     echo "$KUBECONFIG" > kubeconfig.yaml
+      #     export KUBECONFIG=$(pwd)/kubeconfig.yaml
+      #     kubectl apply -f k8s/deployment.yaml
+      #     kubectl apply -f k8s/service.yaml
+
+      # - name: Test service accessibility (remote)
+      #   run: |
+      #     kubectl port-forward service/my-python-github-cicd-app-service 30005:80 &  # 后台运行端口转发
+      #     sleep 5  # 等待服务启动
+      #     curl -f http://localhost:30005 || echo "Service not reachable"

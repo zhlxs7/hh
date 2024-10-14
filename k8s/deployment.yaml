@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-python-github-cicd-app-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-python-github-cicd-app                 # Deployment 使用此标签选择其 Pod
+  template:
+    metadata:
+      labels:
+        app: my-python-github-cicd-app               # Pod 打上了这个标签
+    spec:
+      containers:
+      - name: my-python-github-cicd-app
+        image: my-python-github-cicd-app:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5000
